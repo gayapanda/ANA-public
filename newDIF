@@ -1,0 +1,141 @@
+
+```{r mg1, echo=FALSE, include =FALSE}
+
+# trenger gruppevariabel som en liste
+
+kjonn <- mydata$gender 
+
+mg1 <- multipleGroup(myscores[,-1], 1, group = kjonn)
+
+mg1coef_pars <- data.frame(round(coef(mg1)$J$GroupPars,3))
+names(mg1coef_pars) <- c("Mean difference (G-J)", "Covariance")
+```
+
+```{r DIF drop down, echo=FALSE, include=FALSE}
+################## DENNE FUNKER, slightly less restrictive model ############
+### drop down approach (freely estimating parameters across groups) when
+### specifying a highly constrained model with estimated latent parameters
+model_constrained <- multipleGroup(kunscores, 1, group = kjonn,
+invariance = c(colnames(kunscores), 'free_means', 'free_var'))
+dropdown <- DIF(model_constrained, c('a1', 'd'), scheme = 'drop', seq_stat = 'BIC')
+dropdown
+
+difoppgavenavn <- rownames(dropdown[dropdown[,"p"] < 0.05,]) # 11 DIF oppgaver
+
+```
+
+```{r effect size, echo=FALSE, include=FALSE}
+
+ankers <- rownames(dropdown[dropdown[,"p"] > 0.05,])
+
+# New model restricted with final anchor items
+newmg <- multipleGroup(kunscores, 1, group = kjonn, invariance = c("free_means", "free_var", ankers), method = "EM", verbose=FALSE, technical=list(warn=F))
+coef(newmg, IRT = TRUE)
+coef(newmg)$J$GroupPars # report with 95% CI
+
+### Effect size after purification
+ES <- empirical_ES(newmg, Theta.focal = NULL,
+                   focal_items = 1L:extract.mirt(newmg, "nitems"), DIF = TRUE,
+                   npts = 61, theta_lim = c(-3, 3), ref.group = 1, plot = FALSE,
+                   par.strip.text = list(cex = 0.7),
+                   par.settings = list(strip.background = list(col = "#9ECAE1"),
+                                       strip.border = list(col = "black")))
+miniES <- data.frame(round(ES$ESSD,3))
+
+rownames(ES) <- colnames(kunscores)
+row.names(miniES) <- row.names(ES)
+colnames(miniES) <- "ESSD"
+
+# cohens criteria
+verysmallcohensd <- abs(ES[,"ESSD"]) > 0
+smallcohensd <- abs(ES[,"ESSD"]) > 0.2
+medcohensd <- abs(ES[,"ESSD"]) > 0.5
+larcohensd <- abs(ES[,"ESSD"]) > 0.8
+table(verysmallcohensd)
+table(smallcohensd)
+table(medcohensd)
+table(larcohensd)
+
+```
+
+
+### Group mean difference between boys and girls 
+
+```{r finding dif, echo=FALSE, include=FALSE}
+dif2 <- as.data.frame(dropdown[dropdown[,"p"] < 0.05,])
+
+# dette er rekkefolgen av difoppgaver i hoved datasett
+difoppgaver <- as.vector(matrix(NA, ncol(dif2), 1))
+
+for (t in 1: nrow(dif2)) {
+  difoppgaver[t] <- which(colnames(kunscores)==rownames(dif2)[t])
+}
+
+mg2coef_pars <- data.frame(round(coef(newmg)$J$GroupPars,3))
+names(mg2coef_pars) <- c("Mean difference (G-J)", "Covariance")
+```
+
+```{r final mg, echo=FALSE}
+kable(mg2coef_pars, caption="Mean difference in theta scores")
+
+```
+
+
+#### ESSD
+
+Expected score stadnardized difference (ESSD) er forskjellen på forventede thetaskår mellom to grupper på oppgavenivå. Tabellen nedenfor viser storrelsen på DIF gjennom ESSD på alle oppgaver. Referensegruppe er gutter, og har forventede gjennomsnittsverdi av theta på 0. Oppgaver med negative verdier har dermed guttenes favor, og omvendt. Men storrelsen på ESSD kanselleres i tilfeller med nonuniform DIF. Tallene bor sees sammen med ICC. 
+
+```{r miniES, echo=FALSE}
+kable(miniES)
+
+```
+
+### Probability function and information function on final 11 DIF items
+
+
+```{r DIF plot ICC funksjon, echo=FALSE}
+for (w in 1: nrow(dif2)) {
+plot(seq(-3,3, by = 0.01), probtrace(extract.item(extract.group(newmg, 1), difoppgaver[w]), seq(-3,3, by = 0.01))[,2], type = "l", xlab = "", ylab = "", ylim = c(0,1), lwd = 2.5, main = difoppgavenavn[w]) 
+par(new = TRUE)
+plot(seq(-3,3, by = 0.01), probtrace(extract.item(extract.group(newmg, 2), difoppgaver[w]), seq(-3,3, by = 0.01))[,2], type = "l", lty=2 ,xlab = "θ", ylab = "Probability",bty='L', ylim = c(0,1), lwd = 2.5)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+print(w)
+}
+
+```
+
+
+#### Information function forteller oss om hvilke ferdighetsområder oppgaven gir hoyere eller lavere informasjon til oss. Informasjonen korrelerer direkte med dikrimineringsverdi for oppgaven.
+
+```{r DIF plot info, echo=FALSE}
+for (q in 1: nrow(dif2)) {
+plot(seq(-3,3, by = 0.01), iteminfo(extract.item(extract.group(newmg, 1), difoppgaver[q]), seq(-3,3, by = 0.01)), type = "l", xlab = "", ylab = "", ylim = c(0,1), lwd = 1, main = difoppgavenavn[q]) 
+par(new = TRUE)
+plot(seq(-3,3, by = 0.01), iteminfo(extract.item(extract.group(newmg, 2), difoppgaver[q]), seq(-3,3, by = 0.01)), type = "l", lty=2 ,xlab = "θ", ylab = "Information",bty='L', ylim = c(0,1), lwd = 1)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+print(w)
+}
+
+```
+
+### Test characteristic function and Test information function
+#### TCC er samlet sannsynlighets funksjon for hele oppgavesett. TIF kan tolkes som samlet diskrimineringsverdi for hele oppgavesett.
+
+```{r TCC og TIC, echo=FALSE}
+#### Test characteristic function
+plot(seq(-3, 3, by = 0.01), expected.test(extract.group(newmg, 1), matrix(seq(-3, 3, by = 0.01))), type = "l", xlab = "", ylab = "", ylim = c(0, 40), lwd = 2.5, main = "Test Characteristic Curve")
+par(new = TRUE)
+plot(seq(-3, 3, by = 0.01), expected.test(extract.group(newmg, 2), matrix(seq(-3, 3, by = 0.01))), type = "l",lty=2, xlab = "θ", ylab = "Expected Trait Score", ylim = c(0, 40), lwd = 2.5)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+
+#### Test information function
+plot(seq(-3, 3, by = 0.01), testinfo(extract.group(newmg, 1), seq(-3, 3, by = 0.01)), type = "l", xlab = "", ylab = "", ylim = c(0, 20), lwd = 2.5, main = "Test Information Function")
+par(new = TRUE)
+plot(seq(-3, 3, by = 0.01), testinfo(extract.group(newmg, 2), seq(-3, 3, by = 0.01)), type = "l",lty=2, xlab = "θ", ylab = "Information", ylim = c(0, 20), lwd = 2.5)
+par(xpd=TRUE)
+legend("topleft", lty= 1:2, legend = c("Gutter", "Jenter"), box.lty=1)
+
+```
